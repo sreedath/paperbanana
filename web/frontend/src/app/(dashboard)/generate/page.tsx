@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { runPipeline } from "@/lib/pipeline";
 import type { PipelineStatus, BrandingOptions } from "@/lib/types";
 import { hasApiKey, addHistoryItem } from "@/lib/storage";
@@ -56,10 +56,11 @@ export default function GeneratePage() {
   const [resultImageUrl, setResultImageUrl] = useState<string | null>(null);
   const [resultDescription, setResultDescription] = useState<string | null>(null);
 
-  // API key
-  const [keyPresent, setKeyPresent] = useState(() =>
-    typeof window !== "undefined" ? hasApiKey() : false
-  );
+  // API key — check after mount to avoid hydration mismatch
+  const [keyPresent, setKeyPresent] = useState(false);
+  useEffect(() => {
+    setKeyPresent(hasApiKey());
+  }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
