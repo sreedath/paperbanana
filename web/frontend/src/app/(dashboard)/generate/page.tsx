@@ -2,8 +2,8 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { runPipeline } from "@/lib/pipeline";
-import type { PipelineStatus, BrandingOptions } from "@/lib/types";
-import { hasApiKey, addHistoryItem } from "@/lib/storage";
+import type { PipelineStatus, BrandingOptions, IterationImage } from "@/lib/types";
+import { hasApiKey, addHistoryItem, getLogo, setLogo, removeLogo } from "@/lib/storage";
 import { createThumbnail, downloadDataUrl, generateId } from "@/lib/image-utils";
 import { ApiKeyInput } from "@/components/ApiKeyInput";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ export default function GeneratePage() {
 
   // Branding state
   const [showLogo, setShowLogo] = useState(true);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [showUrl, setShowUrl] = useState(true);
   const [urlText, setUrlText] = useState("vizuara.ai");
 
@@ -55,11 +56,13 @@ export default function GeneratePage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [resultImageUrl, setResultImageUrl] = useState<string | null>(null);
   const [resultDescription, setResultDescription] = useState<string | null>(null);
+  const [allIterations, setAllIterations] = useState<IterationImage[]>([]);
 
   // API key — check after mount to avoid hydration mismatch
   const [keyPresent, setKeyPresent] = useState(false);
   useEffect(() => {
     setKeyPresent(hasApiKey());
+    setLogoPreview(getLogo());
   }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,6 +71,24 @@ export default function GeneratePage() {
     const text = await file.text();
     setSourceContext(text);
     toast.success(`Loaded ${file.name}`);
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setLogo(dataUrl);
+      setLogoPreview(dataUrl);
+      toast.success("Logo saved");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    removeLogo();
+    setLogoPreview(null);
   };
 
   const handleStatusUpdate = useCallback(
@@ -90,8 +111,14 @@ export default function GeneratePage() {
 
     setResultImageUrl(null);
     setResultDescription(null);
+    setAllIterations([]);
 
-    const branding: BrandingOptions = { showLogo, showUrl, urlText };
+    const branding: BrandingOptions = {
+      showLogo,
+      logoDataUrl: getLogo(),
+      showUrl,
+      urlText,
+    };
 
     try {
       const result = await runPipeline(
@@ -109,8 +136,9 @@ export default function GeneratePage() {
       const dataUrl = `data:${result.mimeType};base64,${result.imageBase64}`;
       setResultImageUrl(dataUrl);
       setResultDescription(result.description);
+      setAllIterations(result.allIterations);
 
-      // Save to history
+      // Save final image to history
       const thumbnail = await createThumbnail(dataUrl);
       addHistoryItem({
         id: generateId(),
@@ -276,9 +304,45 @@ export default function GeneratePage() {
                 className="h-4 w-4 rounded border-gray-300"
               />
               <Label htmlFor="show-logo" className="font-normal">
-                Show Vizuara logo
+                Show logo
               </Label>
             </div>
+
+            {showLogo && (
+              <div className="space-y-2 pl-7">
+                {logoPreview ? (
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={logoPreview}
+                      alt="Logo"
+                      className="h-8 w-8 rounded object-contain"
+                    />
+                    <span className="text-sm text-muted-foreground">Logo saved</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRemoveLogo}
+                      disabled={isGenerating}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">
+                      Upload logo image (PNG, SVG, JPG)
+                    </Label>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      disabled={isGenerating}
+                      className="max-w-xs"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center gap-3">
               <input
@@ -326,7 +390,7 @@ export default function GeneratePage() {
         </div>
 
         {/* Right: Result / Progress */}
-        <div>
+        <div className="space-y-6">
           {isGenerating && (
             <Card>
               <CardHeader>
@@ -350,38 +414,74 @@ export default function GeneratePage() {
           )}
 
           {status === "done" && resultImageUrl && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-green-600">Done!</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <img
-                  src={resultImageUrl}
-                  alt="Generated diagram"
-                  className="w-full rounded-lg border"
-                />
-                {resultDescription && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Description
-                    </p>
-                    <p className="mt-1 text-sm">{resultDescription}</p>
-                  </div>
-                )}
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() =>
-                    downloadDataUrl(
-                      resultImageUrl,
-                      `paperbanana-${Date.now()}.png`
-                    )
-                  }
-                >
-                  Download Image
-                </Button>
-              </CardContent>
-            </Card>
+            <>
+              {/* Final result */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-green-600">Final Result</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <img
+                    src={resultImageUrl}
+                    alt="Generated diagram"
+                    className="w-full rounded-lg border"
+                  />
+                  {resultDescription && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Description
+                      </p>
+                      <p className="mt-1 text-sm">{resultDescription}</p>
+                    </div>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() =>
+                      downloadDataUrl(
+                        resultImageUrl,
+                        `paperbanana-${Date.now()}.png`
+                      )
+                    }
+                  >
+                    Download Image
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* All iterations */}
+              {allIterations.length > 1 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">All Iterations</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {allIterations.map((iter, idx) => (
+                      <div key={idx} className="space-y-2">
+                        <p className="text-sm font-medium">{iter.label}</p>
+                        <img
+                          src={iter.dataUrl}
+                          alt={iter.label}
+                          className="w-full rounded-lg border"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            downloadDataUrl(
+                              iter.dataUrl,
+                              `paperbanana-iter${idx + 1}-${Date.now()}.png`
+                            )
+                          }
+                        >
+                          Download
+                        </Button>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
 
           {status === "error" && (

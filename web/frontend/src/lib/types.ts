@@ -21,6 +21,12 @@ export type PipelineStatus =
 
 export interface BrandingOptions {
   showLogo: boolean;
+  logoDataUrl: string | null;
   showUrl: boolean;
   urlText: string;
+}
+
+export interface IterationImage {
+  dataUrl: string;
+  label: string;
 }
