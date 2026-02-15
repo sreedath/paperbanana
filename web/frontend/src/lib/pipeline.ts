@@ -1,12 +1,15 @@
-import type { PipelineStatus } from "./types";
+import type { PipelineStatus, BrandingOptions } from "./types";
 import { generateText, generateImage, generateTextWithImage } from "./gemini";
-import { PLANNER_PROMPT, VISUALIZER_PROMPT, CRITIC_PROMPT } from "./prompts";
+import { PLANNER_PROMPT, LINKEDIN_PLANNER_PROMPT, VISUALIZER_PROMPT, CRITIC_PROMPT } from "./prompts";
+import { applyBranding } from "./image-utils";
 
 export interface PipelineInput {
   sourceContext: string;
   caption: string;
   diagramType: string;
   iterations: number;
+  branding: BrandingOptions;
+  aspectRatio: string;
 }
 
 export interface PipelineResult {
@@ -30,7 +33,9 @@ export async function runPipeline(
   try {
     // Step 1: Plan
     onStatus("planning", "Creating diagram description...");
-    const plannerPrompt = fillTemplate(PLANNER_PROMPT, {
+    const promptTemplate =
+      input.diagramType === "linkedin" ? LINKEDIN_PLANNER_PROMPT : PLANNER_PROMPT;
+    const plannerPrompt = fillTemplate(promptTemplate, {
       source_context: input.sourceContext,
       caption: input.caption,
     });
@@ -39,7 +44,8 @@ export async function runPipeline(
     // Step 2: Generate initial image
     onStatus("generating", "Generating diagram image...");
     const vizPrompt = fillTemplate(VISUALIZER_PROMPT, { description });
-    let imageResult = await generateImage(vizPrompt);
+    const ar = input.aspectRatio || undefined;
+    let imageResult = await generateImage(vizPrompt, ar);
 
     // Step 3: Critique loop (if iterations > 1)
     for (let i = 1; i < input.iterations; i++) {
@@ -78,7 +84,22 @@ export async function runPipeline(
       description = revisedDescription;
       onStatus("generating", `Regenerating image (iteration ${i + 1})...`);
       const newVizPrompt = fillTemplate(VISUALIZER_PROMPT, { description });
-      imageResult = await generateImage(newVizPrompt);
+      imageResult = await generateImage(newVizPrompt, ar);
+    }
+
+    // Step 4: Apply branding overlay
+    if (input.branding.showLogo || input.branding.showUrl) {
+      onStatus("branding", "Applying branding...");
+      const dataUrl = `data:${imageResult.mimeType};base64,${imageResult.imageBase64}`;
+      const branded = await applyBranding(dataUrl, input.branding);
+      // Convert branded data URL back to base64
+      const base64Match = branded.match(/^data:([^;]+);base64,(.+)$/);
+      if (base64Match) {
+        imageResult = {
+          mimeType: base64Match[1],
+          imageBase64: base64Match[2],
+        };
+      }
     }
 
     onStatus("done");

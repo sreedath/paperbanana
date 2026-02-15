@@ -15,5 +15,12 @@ export type PipelineStatus =
   | "planning"
   | "generating"
   | "critiquing"
+  | "branding"
   | "done"
   | "error";
+
+export interface BrandingOptions {
+  showLogo: boolean;
+  showUrl: boolean;
+  urlText: string;
+}

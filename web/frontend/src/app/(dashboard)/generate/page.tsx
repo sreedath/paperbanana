@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { runPipeline } from "@/lib/pipeline";
-import type { PipelineStatus } from "@/lib/types";
+import type { PipelineStatus, BrandingOptions } from "@/lib/types";
 import { hasApiKey, addHistoryItem } from "@/lib/storage";
 import { createThumbnail, downloadDataUrl, generateId } from "@/lib/image-utils";
 import { ApiKeyInput } from "@/components/ApiKeyInput";
@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 
 const STATUS_LABELS: Record<PipelineStatus, string> = {
@@ -31,6 +32,7 @@ const STATUS_LABELS: Record<PipelineStatus, string> = {
   planning: "Planning diagram layout...",
   generating: "Generating image...",
   critiquing: "Critiquing & refining...",
+  branding: "Applying branding...",
   done: "Done!",
   error: "Error",
 };
@@ -41,6 +43,12 @@ export default function GeneratePage() {
   const [caption, setCaption] = useState("");
   const [diagramType, setDiagramType] = useState("methodology");
   const [iterations, setIterations] = useState(3);
+  const [aspectRatio, setAspectRatio] = useState("1:1");
+
+  // Branding state
+  const [showLogo, setShowLogo] = useState(true);
+  const [showUrl, setShowUrl] = useState(true);
+  const [urlText, setUrlText] = useState("vizuara.ai");
 
   // Pipeline state
   const [status, setStatus] = useState<PipelineStatus>("idle");
@@ -82,6 +90,8 @@ export default function GeneratePage() {
     setResultImageUrl(null);
     setResultDescription(null);
 
+    const branding: BrandingOptions = { showLogo, showUrl, urlText };
+
     try {
       const result = await runPipeline(
         {
@@ -89,6 +99,8 @@ export default function GeneratePage() {
           caption: caption.trim(),
           diagramType,
           iterations,
+          branding,
+          aspectRatio,
         },
         handleStatusUpdate
       );
@@ -112,12 +124,18 @@ export default function GeneratePage() {
       });
 
       toast.success("Diagram generated and saved to history!");
-    } catch {
-      toast.error("Generation failed. Check your API key and try again.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      console.error("Pipeline error:", err);
+      toast.error(`Generation failed: ${msg}`);
     }
   };
 
-  const isGenerating = status === "planning" || status === "generating" || status === "critiquing";
+  const isGenerating =
+    status === "planning" ||
+    status === "generating" ||
+    status === "critiquing" ||
+    status === "branding";
 
   return (
     <div className="space-y-8">
@@ -179,7 +197,7 @@ export default function GeneratePage() {
           {/* Diagram type */}
           <div className="space-y-2">
             <Label>Diagram Type</Label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Badge
                 variant={diagramType === "methodology" ? "default" : "outline"}
                 className="cursor-pointer"
@@ -195,6 +213,13 @@ export default function GeneratePage() {
                 onClick={() => setDiagramType("statistical_plot")}
               >
                 Statistical Plot
+              </Badge>
+              <Badge
+                variant={diagramType === "linkedin" ? "default" : "outline"}
+                className="cursor-pointer"
+                onClick={() => setDiagramType("linkedin")}
+              >
+                LinkedIn Post
               </Badge>
             </div>
           </div>
@@ -215,6 +240,70 @@ export default function GeneratePage() {
               step={1}
               disabled={isGenerating}
             />
+          </div>
+
+          {/* Aspect ratio */}
+          <div className="space-y-2">
+            <Label>Aspect Ratio</Label>
+            <div className="flex flex-wrap gap-2">
+              {["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"].map((ratio) => (
+                <Badge
+                  key={ratio}
+                  variant={aspectRatio === ratio ? "default" : "outline"}
+                  className="cursor-pointer"
+                  onClick={() => setAspectRatio(ratio)}
+                >
+                  {ratio}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Branding options */}
+          <div className="space-y-4">
+            <Label className="text-sm font-semibold">Branding</Label>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="show-logo"
+                checked={showLogo}
+                onChange={(e) => setShowLogo(e.target.checked)}
+                disabled={isGenerating}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="show-logo" className="font-normal">
+                Show Vizuara logo
+              </Label>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="show-url"
+                checked={showUrl}
+                onChange={(e) => setShowUrl(e.target.checked)}
+                disabled={isGenerating}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="show-url" className="font-normal">
+                Show URL
+              </Label>
+            </div>
+
+            {showUrl && (
+              <div className="space-y-1 pl-7">
+                <Input
+                  value={urlText}
+                  onChange={(e) => setUrlText(e.target.value)}
+                  placeholder="vizuara.ai"
+                  disabled={isGenerating}
+                  className="max-w-xs"
+                />
+              </div>
+            )}
           </div>
 
           {/* Submit */}
@@ -246,6 +335,8 @@ export default function GeneratePage() {
                     ? "Planning"
                     : status === "generating"
                     ? "Generating"
+                    : status === "branding"
+                    ? "Branding"
                     : "Critiquing"}
                 </CardTitle>
               </CardHeader>

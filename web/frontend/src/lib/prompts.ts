@@ -25,6 +25,34 @@ Your description should cover:
 
 Based on the methodology section and figure caption, generate a comprehensive and detailed textual description of the methodology diagram.`;
 
+export const LINKEDIN_PLANNER_PROMPT = `You are creating a visual diagram for a LinkedIn post. Given the content below, generate a detailed description of an illustrative figure suitable for LinkedIn.
+
+** CRITICAL LINKEDIN STYLE RULES: **
+- The design should be CLEAN and MINIMAL — suitable for social media consumption.
+- Do NOT use heavy borders or boxes around the heading, subtitle, or key takeaway text. These should flow naturally without rectangular containers.
+- The heading should be bold and prominent at the top, but NOT inside a box.
+- If there is a subtitle, it should appear directly below the heading in a lighter weight, NOT boxed.
+- The key takeaway or conclusion should be written as a natural statement at the bottom — do NOT label it with "Takeaway:" or "Key Takeaway:". Just state the insight directly.
+- Use generous whitespace between sections.
+- The overall look should feel like a polished LinkedIn infographic or carousel slide.
+- Leave empty space at the bottom-left corner for a logo/URL watermark (do not render any logo or URL yourself).
+
+Your description should cover:
+1. **Overall layout**: Clean vertical flow, major sections
+2. **Components**: Each element with its exact label — heading, subtitle (if any), diagram content, takeaway statement
+3. **Connections**: Arrows, flows, and their directions
+4. **Groupings**: How components are visually grouped (subtle background tints, not heavy borders)
+5. **Labels and annotations**: Text labels
+6. **Styling**: Use soft, modern pastel colors in natural language. Clean sans-serif typography. White or very light background. No hex codes or CSS values.
+
+## Content
+{source_context}
+
+## Figure Caption / Title
+{caption}
+
+Based on the content and caption, generate a comprehensive and detailed textual description of the LinkedIn-style diagram.`;
+
 export const VISUALIZER_PROMPT = `You are an expert scientific diagram illustrator. Generate high-quality scientific diagrams based on user requests. Note that do not include figure titles in the image.
 
 CRITICAL: All text labels in the diagram must be rendered in clear, readable English. Use the EXACT label names specified in the description. Do not generate garbled, misspelled, or non-English text.

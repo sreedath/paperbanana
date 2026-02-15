@@ -27,14 +27,18 @@ export async function generateText(prompt: string): Promise<string> {
   return response.text ?? "";
 }
 
-/** Image generation using gemini-2.0-flash-exp with IMAGE modality. */
-export async function generateImage(prompt: string): Promise<{ imageBase64: string; mimeType: string }> {
+/** Image generation using gemini-2.5-flash-image. */
+export async function generateImage(
+  prompt: string,
+  aspectRatio?: string
+): Promise<{ imageBase64: string; mimeType: string }> {
   const ai = getClient();
   const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash-exp",
+    model: "gemini-2.5-flash-image",
     contents: prompt,
     config: {
-      responseModalities: ["IMAGE"],
+      responseModalities: ["TEXT", "IMAGE"],
+      ...(aspectRatio ? { imageConfig: { aspectRatio } } : {}),
     },
   });
   const parts = response.candidates?.[0]?.content?.parts;
