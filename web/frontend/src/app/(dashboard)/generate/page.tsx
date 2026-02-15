@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
-import { useJobStatus } from "@/hooks/useJobStatus";
-import { apiFetch, ApiError } from "@/lib/api";
-import type { ApiKeyStatus, Asset, GenerateResponse } from "@/lib/types";
-import { ApiKeyPrompt } from "@/components/ApiKeyPrompt";
+import { useState, useCallback } from "react";
+import { runPipeline } from "@/lib/pipeline";
+import type { PipelineStatus } from "@/lib/types";
+import { hasApiKey, addHistoryItem } from "@/lib/storage";
+import { createThumbnail, downloadDataUrl, generateId } from "@/lib/image-utils";
+import { ApiKeyInput } from "@/components/ApiKeyInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,54 +26,33 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
-export default function GeneratePage() {
-  const { token } = useAuth();
+const STATUS_LABELS: Record<PipelineStatus, string> = {
+  idle: "",
+  planning: "Planning diagram layout...",
+  generating: "Generating image...",
+  critiquing: "Critiquing & refining...",
+  done: "Done!",
+  error: "Error",
+};
 
+export default function GeneratePage() {
   // Form state
   const [sourceContext, setSourceContext] = useState("");
   const [caption, setCaption] = useState("");
   const [diagramType, setDiagramType] = useState("methodology");
   const [iterations, setIterations] = useState(3);
-  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
-  const [submitting, setSubmitting] = useState(false);
 
-  // API key check
-  const [showKeyPrompt, setShowKeyPrompt] = useState(false);
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
+  // Pipeline state
+  const [status, setStatus] = useState<PipelineStatus>("idle");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [resultImageUrl, setResultImageUrl] = useState<string | null>(null);
+  const [resultDescription, setResultDescription] = useState<string | null>(null);
 
-  // Job tracking
-  const [jobId, setJobId] = useState<string | null>(null);
-  const { job, isPolling } = useJobStatus(jobId, token);
+  // API key
+  const [keyPresent, setKeyPresent] = useState(() =>
+    typeof window !== "undefined" ? hasApiKey() : false
+  );
 
-  // Assets
-  const [assets, setAssets] = useState<Asset[]>([]);
-
-  const checkApiKey = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await apiFetch<ApiKeyStatus>("/settings/api-key", token);
-      setHasKey(data.has_key);
-    } catch {
-      /* ignore */
-    }
-  }, [token]);
-
-  const loadAssets = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await apiFetch<{ items: Asset[] }>("/assets", token);
-      setAssets(data.items);
-    } catch {
-      /* ignore */
-    }
-  }, [token]);
-
-  useEffect(() => {
-    checkApiKey();
-    loadAssets();
-  }, [checkApiKey, loadAssets]);
-
-  // Handle file upload (read content client-side)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -82,66 +61,72 @@ export default function GeneratePage() {
     toast.success(`Loaded ${file.name}`);
   };
 
+  const handleStatusUpdate = useCallback(
+    (newStatus: PipelineStatus, message?: string) => {
+      setStatus(newStatus);
+      setStatusMessage(message || STATUS_LABELS[newStatus]);
+    },
+    []
+  );
+
   const handleSubmit = async () => {
-    if (!token || !sourceContext.trim() || !caption.trim()) {
+    if (!sourceContext.trim() || !caption.trim()) {
       toast.error("Please provide both a description and a caption.");
       return;
     }
-
-    // Check API key first
-    if (!hasKey) {
-      setShowKeyPrompt(true);
+    if (!hasApiKey()) {
+      toast.error("Please set your Gemini API key first.");
       return;
     }
 
-    setSubmitting(true);
+    setResultImageUrl(null);
+    setResultDescription(null);
+
     try {
-      const res = await apiFetch<GenerateResponse>("/generate", token, {
-        method: "POST",
-        body: JSON.stringify({
-          source_context: sourceContext.trim(),
-          communicative_intent: caption.trim(),
-          diagram_type: diagramType,
-          refinement_iterations: iterations,
-          asset_ids: selectedAssetIds,
-        }),
+      const result = await runPipeline(
+        {
+          sourceContext: sourceContext.trim(),
+          caption: caption.trim(),
+          diagramType,
+          iterations,
+        },
+        handleStatusUpdate
+      );
+
+      const dataUrl = `data:${result.mimeType};base64,${result.imageBase64}`;
+      setResultImageUrl(dataUrl);
+      setResultDescription(result.description);
+
+      // Save to history
+      const thumbnail = await createThumbnail(dataUrl);
+      addHistoryItem({
+        id: generateId(),
+        caption: caption.trim(),
+        diagramType,
+        sourceContext: sourceContext.trim().slice(0, 500),
+        description: result.description,
+        imageDataUrl: dataUrl,
+        thumbnailDataUrl: thumbnail,
+        iterations,
+        createdAt: new Date().toISOString(),
       });
-      setJobId(res.job_id);
-      toast.success("Generation started!");
-    } catch (e) {
-      if (e instanceof ApiError) {
-        const detail = e.detail;
-        if (
-          typeof detail === "object" &&
-          detail !== null &&
-          "code" in detail &&
-          (detail as Record<string, unknown>).code === "api_key_required"
-        ) {
-          setShowKeyPrompt(true);
-          return;
-        }
-        toast.error(e.message);
-      } else {
-        toast.error("Failed to start generation");
-      }
-    } finally {
-      setSubmitting(false);
+
+      toast.success("Diagram generated and saved to history!");
+    } catch {
+      toast.error("Generation failed. Check your API key and try again.");
     }
   };
 
-  const toggleAsset = (id: string) => {
-    setSelectedAssetIds((prev) =>
-      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
-    );
-  };
-
-  const isGenerating = submitting || isPolling;
-  const isDone = job?.status === "completed";
-  const isFailed = job?.status === "failed";
+  const isGenerating = status === "planning" || status === "generating" || status === "critiquing";
 
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-bold">Generate Diagram</h1>
+
+      {/* API Key Input (shown if no key) */}
+      {!keyPresent && (
+        <ApiKeyInput onKeyChanged={() => setKeyPresent(hasApiKey())} />
+      )}
 
       <div className="grid gap-8 lg:grid-cols-2">
         {/* Left: Input Form */}
@@ -232,102 +217,82 @@ export default function GeneratePage() {
             />
           </div>
 
-          {/* Custom assets */}
-          {assets.length > 0 && (
-            <div className="space-y-2">
-              <Label>Include Custom Assets</Label>
-              <div className="flex flex-wrap gap-2">
-                {assets.map((asset) => (
-                  <Badge
-                    key={asset.id}
-                    variant={
-                      selectedAssetIds.includes(asset.id)
-                        ? "default"
-                        : "outline"
-                    }
-                    className="cursor-pointer"
-                    onClick={() => toggleAsset(asset.id)}
-                  >
-                    {asset.name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Submit */}
           <Button
             size="lg"
             className="w-full"
             onClick={handleSubmit}
             disabled={
-              isGenerating || !sourceContext.trim() || !caption.trim()
+              isGenerating || !sourceContext.trim() || !caption.trim() || !keyPresent
             }
           >
             {isGenerating ? "Generating..." : "Generate Diagram"}
           </Button>
+
+          {/* API key management (when key exists) */}
+          {keyPresent && (
+            <ApiKeyInput onKeyChanged={() => setKeyPresent(hasApiKey())} />
+          )}
         </div>
 
         {/* Right: Result / Progress */}
         <div>
-          {isPolling && job && (
+          {isGenerating && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500" />
-                  {job.status === "pending" ? "Queued" : "Generating"}
+                  {status === "planning"
+                    ? "Planning"
+                    : status === "generating"
+                    ? "Generating"
+                    : "Critiquing"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  {job.progress || "Starting pipeline..."}
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  This typically takes 30-60 seconds.
+                  {statusMessage}
                 </p>
               </CardContent>
             </Card>
           )}
 
-          {isDone && job && (
+          {status === "done" && resultImageUrl && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-green-600">Done!</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {job.image_url && (
-                  <a
-                    href={job.image_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <img
-                      src={job.image_url}
-                      alt="Generated diagram"
-                      className="w-full rounded-lg border"
-                    />
-                  </a>
-                )}
-                {job.description && (
+                <img
+                  src={resultImageUrl}
+                  alt="Generated diagram"
+                  className="w-full rounded-lg border"
+                />
+                {resultDescription && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground">
                       Description
                     </p>
-                    <p className="mt-1 text-sm">{job.description}</p>
+                    <p className="mt-1 text-sm">{resultDescription}</p>
                   </div>
                 )}
-                {job.image_url && (
-                  <Button asChild variant="outline" className="w-full">
-                    <a href={job.image_url} download>
-                      Download Image
-                    </a>
-                  </Button>
-                )}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() =>
+                    downloadDataUrl(
+                      resultImageUrl,
+                      `paperbanana-${Date.now()}.png`
+                    )
+                  }
+                >
+                  Download Image
+                </Button>
               </CardContent>
             </Card>
           )}
 
-          {isFailed && job && (
+          {status === "error" && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-destructive">
@@ -336,14 +301,12 @@ export default function GeneratePage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  {job.error_message || "An unknown error occurred."}
+                  {statusMessage}
                 </p>
                 <Button
                   variant="outline"
                   className="mt-4"
-                  onClick={() => {
-                    setJobId(null);
-                  }}
+                  onClick={() => setStatus("idle")}
                 >
                   Try Again
                 </Button>
@@ -351,7 +314,7 @@ export default function GeneratePage() {
             </Card>
           )}
 
-          {!jobId && (
+          {status === "idle" && !resultImageUrl && (
             <div className="flex h-full items-center justify-center rounded-lg border border-dashed p-12 text-center">
               <p className="text-muted-foreground">
                 Your generated diagram will appear here.
@@ -360,20 +323,6 @@ export default function GeneratePage() {
           )}
         </div>
       </div>
-
-      {/* API key prompt modal */}
-      {token && (
-        <ApiKeyPrompt
-          open={showKeyPrompt}
-          onClose={() => setShowKeyPrompt(false)}
-          onSaved={() => {
-            setShowKeyPrompt(false);
-            setHasKey(true);
-            toast.success("Key saved! You can now generate.");
-          }}
-          token={token}
-        />
-      )}
     </div>
   );
 }

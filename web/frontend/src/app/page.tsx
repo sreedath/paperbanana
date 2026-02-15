@@ -8,14 +8,9 @@ export default function LandingPage() {
       <header className="border-b">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
           <span className="text-xl font-bold">Paper Banana</span>
-          <div className="flex gap-2">
-            <Button variant="ghost" asChild>
-              <Link href="/login">Log in</Link>
-            </Button>
-            <Button asChild>
-              <Link href="/signup">Sign up</Link>
-            </Button>
-          </div>
+          <Button asChild>
+            <Link href="/generate">Start Generating</Link>
+          </Button>
         </div>
       </header>
 
@@ -28,12 +23,9 @@ export default function LandingPage() {
           Generate publication-quality methodology diagrams and statistical plots
           from text descriptions. Paste your methodology, get a figure.
         </p>
-        <div className="mt-8 flex gap-4">
+        <div className="mt-8">
           <Button size="lg" asChild>
-            <Link href="/signup">Get Started</Link>
-          </Button>
-          <Button size="lg" variant="outline" asChild>
-            <Link href="/login">Log in</Link>
+            <Link href="/generate">Start Generating</Link>
           </Button>
         </div>
 
@@ -52,9 +44,9 @@ export default function LandingPage() {
             </p>
           </div>
           <div>
-            <h3 className="font-semibold">Gallery &amp; History</h3>
+            <h3 className="font-semibold">Local History</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Every generation saved to your personal gallery for future use.
+              Generations saved locally in your browser for quick access.
             </p>
           </div>
         </div>
