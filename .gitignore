@@ -73,3 +73,8 @@ CLAUDE.md
 .pytest_cache/
 .venv/
 .env
+
+# Next.js / Node
+node_modules/
+.next/
+out/
