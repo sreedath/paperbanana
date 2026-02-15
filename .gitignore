@@ -78,3 +78,4 @@ CLAUDE.md
 node_modules/
 .next/
 out/
+node_modules
